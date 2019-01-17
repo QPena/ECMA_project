@@ -150,6 +150,41 @@ def readDataFromFile(filename):
     n = len(unique)
 
 
+class CuttingPlaneCallback(LazyConstraintCallback):
+    def __call__(self):
+        # Enregistrement des résultats du problème maître
+        m_star = []
+        sum_x_i = [0] * n
+        x_star = []
+        z = round(self.get_values('z'),5)
+        
+        for m in Mat:
+            x_star.append(self.get_values(getVarName('x',m)))
+            if self.get_values(getVarName('x',m)) > 0:
+                m_star.append(m)
+                sum_x_i[getNodeIndex(m[0])] +=1
+        
+        # Sous-problème lié à l'objectif
+        obj_val, delta_1_star = worstObjective2(x_star)
+        if obj_val > z:
+            ind = ['z'] + [getVarName('x',m) for m in Mat]
+            val = [1] + [-Mat[i][2] * (1+delta_1_star[i]) for i in range(len(Mat))]
+            self.add(constraint=cplex.SparsePair(ind=[name2idx[name] for name in ind],\
+                                                 val=val),\
+                     rhs=0, sense="G")
+        else:
+            con_val, delta_2_star = worstWeight2(x_star)
+            if con_val > S:
+                p_2 = [p[getNodeIndex(i)] + delta_2_star[getNodeIndex(i)] * ph[getNodeIndex(i)] for i in unique]
+                ind = [getVarName('x',m) for m in Mat]
+                val = [p_2[getNodeIndex(m[0])] for m in Mat]
+                self.add(constraint=cplex.SparsePair(ind=[name2idx[name] for name in ind], val=val),\
+                         rhs=S - p_2[getNodeIndex(t)], sense="L")
+            
+
+
+
+
 def createVariables(cpl, z = False, dual = False):
     global name2idx
     # Ajout des variables X
@@ -259,7 +294,7 @@ def addWeightCut(cpl, delta_2):
     def getP(d):
         return p[getNodeIndex(d)] + delta_2[getNodeIndex(d)] * ph[getNodeIndex(d)]
     ind = [getVarName('x',m) for m in Mat]
-    val = [getP(m[0]) for m in Mat]
+    val = [getP(m[0])for m in Mat]
     cpl.linear_constraints.add(lin_expr=[cplex.SparsePair(ind=[name2idx[name] for name in ind], val=val)],\
                                 rhs=[S - getP(t)], senses="L")
 
@@ -292,37 +327,55 @@ def worstObjective(matr):
 
     return round(obj_val,5), obj_coef
 
+def worstObjective2(x_star):
+    m_star = []
+    for i in range(len(Mat)):
+        if x_star[i] > 0:
+            m_star.append(Mat[i])
+            
+    obj_val, delta_1_star = worstObjective(m_star)
+    delta_1_star_all = [0] * len(Mat)
+    for i in range(len(delta_1_star)):
+        delta_1_star_all[Mat.index(m_star[i])] = delta_1_star[i]
+    return obj_val, delta_1_star_all
+    
+            
+
 def worstWeight(y): # where y_i = sum x_ij
     cpl_con = cplex.Cplex()
-        
     cpl_con.set_log_stream(None)
     cpl_con.set_results_stream(None)
 
     
     cpl_con.objective.set_sense(cpl_con.objective.sense.maximize)
     
-    
     obj_d2 = [ph[i]*y[i] for i in range(n)]
     obj_d2[getNodeIndex(t)] += ph[getNodeIndex(t)] 
-    
     
     cpl_con.variables.add(names = ["delta_2_"+str(i) for i in range(n)],\
                                    obj=obj_d2,\
                                    ub = [2] * n)
     cpl_con.linear_constraints.add(lin_expr=[cplex.SparsePair(ind=[i for i in range(n)], val = [1]*n)],\
                                              rhs = [d2], senses="L")
-    
     cpl_con.solve()
-    
+
     con_coef = []
     con_val = 0
     for i in range(n):
         coef = cpl_con.solution.get_values('delta_2_' + str(i))
         con_coef.append(coef)
-        con_val += (p[i] + coef * ph[i]) * y[i]
-    con_val += con_coef[getNodeIndex(t)]
-    
+        con_val += (p[i] + coef * ph[i]) * (y[i] if i != getNodeIndex(t) else 1)
+
     return con_val, con_coef
+    
+
+def worstWeight2(x_star):
+    y = [0] * n
+    for i in range(len(Mat)):
+        if x_star[i] > 0:
+            y[getNodeIndex(Mat[i][0])] += 1
+    con_val, delta_2_star = worstWeight(y)
+    return con_val, delta_2_star
     
 
 def cuttingPlanes():
@@ -346,31 +399,54 @@ def cuttingPlanes():
         cpl.solve()
         
         # Enregistrement des résultats du problème maître
-        m_star = []
-        sum_x_i = [0] * n
+#        m_star = []
+#        sum_x_i = [0] * n
+        x_star = []
         z = round(cpl.solution.get_values('z'),5)
         
         for m in Mat:
-            if cpl.solution.get_values(getVarName('x',m)) > 0:
-                m_star.append(m)
-                sum_x_i[getNodeIndex(m[0])] +=1
+            x_star.append(cpl.solution.get_values(getVarName('x',m)))
+#            if cpl.solution.get_values(getVarName('x',m)) > 0:
+#                m_star.append(m)
+#                sum_x_i[getNodeIndex(m[0])] +=1
         
         # Sous-problème lié à l'objectif
-        obj_val, delta_1_star = worstObjective(m_star)
+        obj_val, delta_1_star = worstObjective2(x_star)
         if obj_val > z:
-            addObjectiveCut(cpl, delta_1_star, m_star)
+            addObjectiveCut(cpl, delta_1_star, Mat)
         else:
             is_opt = True
         
-        # Sous-problème lié au poids
-        con_val, delta_2_star = worstWeight(sum_x_i)
-        if con_val > S:
-            addWeightCut(cpl, delta_2_star)
-            is_opt = False
+            # Sous-problème lié au poids
+            con_val, delta_2_star = worstWeight2(x_star)
+            if con_val > S:
+                addWeightCut(cpl, delta_2_star)
+                is_opt = False
 
     return cpl.solution.get_objective_value(), cpl.solution.get_values()
 
 
+def branchAndCut():
+    cpl = cplex.Cplex()
+    
+    cpl.set_log_stream(None)
+    cpl.set_results_stream(None)
+    
+    createVariables(cpl, z=True)
+    
+    flowConstraints(cpl)
+    
+    
+    sum_dist = sum([sum(d) for d in Dist])
+    addObjectiveCut(cpl, [min(d1*m[2]/sum_dist, m[3]) for m in Mat], Mat)
+    
+    sum_ph = sum(ph)
+    addWeightCut(cpl, [min(ph[i]*d2/sum_ph, 2) for i in range(n)])
+    
+    cpl.register_callback(CuttingPlaneCallback)
+    cpl.solve()
+
+    return cpl.solution.get_objective_value(), cpl.solution.get_values()
 
 def dualSolve():
     cpl = cplex.Cplex()
@@ -401,11 +477,12 @@ def dualSolve():
 
 
 
-modes = ["CP", "dual"]
+#modes = ["CP", "dual"]
+modes = ["b&c"]
 results = {mode : [] for mode in modes}
 
 
-for f in files.files[20:25]:
+for f in files.files[:]:
     for mode in modes:
         start_time = time.clock()
         print f
@@ -416,6 +493,8 @@ for f in files.files[20:25]:
             objectif, solution = cuttingPlanes()
         if mode == "dual":
             objectif, solution = dualSolve()
+        if mode == "b&c":
+            objectif, solution = branchAndCut()
         
         exec_time = time.clock() - start_time
         path = printSolution(objectif, solution)
