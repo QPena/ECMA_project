@@ -9,6 +9,7 @@ import cplex
 from cplex.callbacks import LazyConstraintCallback
 import time
 import numpy as np
+import random
 
 import files
 
@@ -165,7 +166,7 @@ class CuttingPlaneCallback(LazyConstraintCallback):
                 sum_x_i[getNodeIndex(m[0])] +=1
         
         # Sous-problème lié à l'objectif
-        obj_val, delta_1_star = worstObjective2(x_star)
+        obj_val, delta_1_star = worstObjective_heu(x_star)
         if obj_val > z:
             ind = ['z'] + [getVarName('x',m) for m in Mat]
             val = [1] + [-Mat[i][2] * (1+delta_1_star[i]) for i in range(len(Mat))]
@@ -173,7 +174,7 @@ class CuttingPlaneCallback(LazyConstraintCallback):
                                                  val=val),\
                      rhs=0, sense="G")
         else:
-            con_val, delta_2_star = worstWeight2(x_star)
+            con_val, delta_2_star = worstWeight_heu(x_star)
             if con_val > S:
                 p_2 = [p[getNodeIndex(i)] + delta_2_star[getNodeIndex(i)] * ph[getNodeIndex(i)] for i in unique]
                 ind = [getVarName('x',m) for m in Mat]
@@ -339,7 +340,29 @@ def worstObjective2(x_star):
         delta_1_star_all[Mat.index(m_star[i])] = delta_1_star[i]
     return obj_val, delta_1_star_all
     
-            
+  
+def worstObjective_heu(x_star):
+    m_star = []
+    for i in range(len(Mat)):
+        if x_star[i] > 0:
+            m_star.append(Mat[i])
+    
+    m_star.sort(key=lambda x: x[2], reverse=True)
+    obj_val = sum([m[2] for m in m_star])
+    delta_1_star = [0] * len(Mat)
+    d = d1
+    i = 0
+    while d > 0 and i < len(m_star):
+        delta = min([d,m_star[i][3]])
+        d -= delta
+        delta_1_star[Mat.index(m_star[i])] = delta
+        obj_val += m_star[i][2] * delta
+        i += 1
+    
+    return round(obj_val,5), delta_1_star
+
+
+          
 
 def worstWeight(y): # where y_i = sum x_ij
     cpl_con = cplex.Cplex()
@@ -376,7 +399,25 @@ def worstWeight2(x_star):
             y[getNodeIndex(Mat[i][0])] += 1
     con_val, delta_2_star = worstWeight(y)
     return con_val, delta_2_star
-    
+
+def worstWeight_heu(x_star):
+    delta_2_star = [0] * n
+    y = [t]
+    for i in range(len(Mat)):
+        if x_star[i] > 0:
+            y.append(Mat[i][0])
+    y.sort(key=lambda x: ph[getNodeIndex(x)], reverse = True)
+    con_val = sum(p[getNodeIndex(x)] for x in y)
+    d = d2
+    i = 0
+    while d > 0 and i < len(y):
+        delta = min([d, 2])
+        d -= delta
+        delta_2_star[getNodeIndex(y[i])] = delta
+        con_val += delta * ph[getNodeIndex(y[i])]
+        i += 1
+    return con_val, delta_2_star
+
 
 def cuttingPlanes():
     cpl = cplex.Cplex()    
@@ -409,16 +450,16 @@ def cuttingPlanes():
 #            if cpl.solution.get_values(getVarName('x',m)) > 0:
 #                m_star.append(m)
 #                sum_x_i[getNodeIndex(m[0])] +=1
-        
+
         # Sous-problème lié à l'objectif
-        obj_val, delta_1_star = worstObjective2(x_star)
+        obj_val, delta_1_star = worstObjective_heu(x_star)
         if obj_val > z:
             addObjectiveCut(cpl, delta_1_star, Mat)
         else:
             is_opt = True
         
             # Sous-problème lié au poids
-            con_val, delta_2_star = worstWeight2(x_star)
+            con_val, delta_2_star = worstWeight_heu(x_star)
             if con_val > S:
                 addWeightCut(cpl, delta_2_star)
                 is_opt = False
@@ -465,48 +506,222 @@ def dualSolve():
     return cpl.solution.get_objective_value(), cpl.solution.get_values()
 
 
+def nonRobustSolve():
+    cpl = cplex.Cplex()
+    
+    cpl.set_log_stream(None)
+    cpl.set_results_stream(None)
+    
+    createVariables(cpl, z=True)
+
+    flowConstraints(cpl)
+    
+    addObjectiveCut(cpl, [0]*len(Mat), Mat)
+    addWeightCut(cpl, [0]*n)
+
+    cpl.solve()
+    
+    return cpl.solution.get_objective_value(), cpl.solution.get_values()
 
 
+def heuristicSolve_____():
+    ArkMap = [[-1]*n for _ in range(n)]
+    for i in range(len(Mat)):
+        ArkMap[getNodeIndex(Mat[i][0])][getNodeIndex(Mat[i][1])] = i
+
+    P = []
+    Pb = [x for x in unique]
+    d = [float("inf")] * n
+    pred = [-1] * n
+    d[getNodeIndex(s)] = 0
 
 
+    while len(P) < n:
+        a = sorted([x for x in Pb],key=lambda x: d[getNodeIndex(x)])[0]
+        P.append(a)
+        Pb.remove(a)
+        
+        if d[getNodeIndex(a)] >= d[getNodeIndex(t)]:
+            print "break", len(P), n
+            break
+        for b in Pb:
+                if Dist[getNodeIndex(a)][getNodeIndex(b)] > 0:
+                    distance = d[getNodeIndex(a)] + Dist[getNodeIndex(a)][getNodeIndex(b)] * (1+Delta[getNodeIndex(a)][getNodeIndex(b)])
+                    #wei = weight[getNodeIndex(a)] + p[getNodeIndex(b)]
+                    if d[getNodeIndex(b)] > distance:# and wei <= S - wei_add:
+                        pred[getNodeIndex(b)] = a
+                        d[getNodeIndex(b)] = distance
+                        #weight[getNodeIndex(b)] = wei
+
+    curr = t
+    path = []
+    values = [0] * len(Mat)
+    #print pred, d
+    while curr != s:
+        path = [curr] + path
+        values[ArkMap[getNodeIndex(pred[getNodeIndex(curr)])][getNodeIndex(curr)]] = 1
+        curr = pred[getNodeIndex(curr)]
+    
+    path = [s] + path
+    inside = [x for x in path if x != s and x != t]
+    
+    con_val, delta_2_star = worstWeight_heu(values)
+    while con_val > S:
+        change = False
+        for remove in sorted(inside, key=lambda x: p[getNodeIndex(x)] + delta_2_star[getNodeIndex(x)] * ph[getNodeIndex(x)]):
+            before = path[path.index(remove)-1]
+            after = path[path.index(remove)+1]
+            for add in sorted([node for node in unique if node not in path and\
+                                                            ArkMap[getNodeIndex(before)][getNodeIndex(node)] >= 0 and\
+                                                            ArkMap[getNodeIndex(node)][getNodeIndex(after)] >= 0],
+                                key=lambda x: p[getNodeIndex(x)] + delta_2_star[getNodeIndex(x)] * ph[getNodeIndex(x)]):
+#                if p[getNodeIndex(add)] + delta_2_star[getNodeIndex(remove)] * ph[getNodeIndex(add)] > p[getNodeIndex(remove)] + delta_2_star[getNodeIndex(remove)] * ph[getNodeIndex(remove)]:
+#                    continue
+                print path, remove, add
+                values[ArkMap[getNodeIndex(before)][getNodeIndex(add)]] = 1
+                values[ArkMap[getNodeIndex(add)][getNodeIndex(after)]] = 1
+                values[ArkMap[getNodeIndex(before)][getNodeIndex(remove)]] = 0
+                values[ArkMap[getNodeIndex(remove)][getNodeIndex(after)]] = 0
+                
+                path[path.index(remove)] = add
+
+                inside[inside.index(remove)] = add
+                
+                change = True
+                break
+            if change:
+                break
+        if change:    
+            print change
+            con_val, delta_2_star = worstWeight_heu(values)
+            print con_val, S
+            continue
+        else:
+            print "BROKEN"
+            break
+    
+    obj_val, _ = worstObjective_heu(values)
+    
+    
+    return obj_val, values
+
+def heuristicSolve():
+    ArkMap = [[-1]*n for _ in range(n)]
+    for i in range(len(Mat)):
+        ArkMap[getNodeIndex(Mat[i][0])][getNodeIndex(Mat[i][1])] = i
+
+    banned = []
+    saved = []
+    saving = -1
+    feasible = False
+    
+    while True:
+        print "BAN", banned
+        print "SAVED", saved
+        P = []
+        Pb = [x for x in unique if x not in banned]
+        d = [float("inf")] * n
+        pred = [-1] * n
+        d[getNodeIndex(s)] = 0
+    
+    
+        while len(P) < n:
+            a = sorted([x for x in Pb],key=lambda x: d[getNodeIndex(x)])[0]
+            P.append(a)
+            Pb.remove(a)
+            
+            if d[getNodeIndex(a)] >= d[getNodeIndex(t)]:
+                break
+            for b in Pb:
+                    if Dist[getNodeIndex(a)][getNodeIndex(b)] > 0:
+                        distance = d[getNodeIndex(a)] + Dist[getNodeIndex(a)][getNodeIndex(b)] * (1+Delta[getNodeIndex(a)][getNodeIndex(b)])
+                        #wei = weight[getNodeIndex(a)] + p[getNodeIndex(b)]
+                        if d[getNodeIndex(b)] > distance:# and wei <= S - wei_add:
+                            pred[getNodeIndex(b)] = a
+                            d[getNodeIndex(b)] = distance
+                            #weight[getNodeIndex(b)] = wei
+        
+        if d[getNodeIndex(t)] == float("inf"):
+            saving = banned[0]
+            saved.append(saving)
+            banned = []
+        else:
+        
+            curr = t
+            path = []
+            values = [0] * len(Mat)
+            #print pred, d
+            while curr != s:
+                path = [curr] + path
+                values[ArkMap[getNodeIndex(pred[getNodeIndex(curr)])][getNodeIndex(curr)]] = 1
+                curr = pred[getNodeIndex(curr)]
+            
+            path = [s] + path
+            inside = [x for x in path if x != s and x != t and x != saving]
+            
+            
+            con_val, _ = worstWeight_heu(values)
+            
+            if con_val > S:
+                if inside == []:
+                    saving = banned[0]
+                    saved.append(saving)
+                    banned = []
+                    
+                else:
+                    print path, inside
+                    banned.append(sorted(inside, key=lambda x: ph[getNodeIndex(x)])[0])
+            else:
+                feasible = True
+                break
+        if feasible:
+            break
+    
+    obj_val, _ = worstObjective_heu(values)
+    
+    
+    return obj_val, values
 
 
-
-
-
-
-
-
-#modes = ["CP", "dual"]
-modes = ["b&c"]
+#modes = ["CP", "dual", "b&b"]
+modes = ["heuristic", "dual"]
 results = {mode : [] for mode in modes}
 
 
-for f in files.files[:]:
+for f in files.files[:10]:
     for mode in modes:
         start_time = time.clock()
         print f
         
         readDataFromFile(f)
         
+        data_time = time.clock()
         if mode == "CP":
             objectif, solution = cuttingPlanes()
         if mode == "dual":
             objectif, solution = dualSolve()
         if mode == "b&c":
             objectif, solution = branchAndCut()
+        if mode == "classic":
+            objectif, solution = nonRobustSolve()
+        if mode == "heuristic":
+            objectif, solution = heuristicSolve()
         
+        solve_time = time.clock() - data_time
         exec_time = time.clock() - start_time
-        path = printSolution(objectif, solution)
-        results[mode].append((f, objectif, path, exec_time))
         
-        print "time :", exec_time, "s\n\n"
-
+        path = printSolution(objectif, solution)
+        results[mode].append((f, objectif, path, exec_time, solve_time))
+        
+        print "time :", exec_time, "s"
+        print "dont data :", data_time - start_time
+        print "dont solving :", solve_time
+        print "\n\n"
 
 for i in range(len(results[modes[0]])):
     print results[modes[0]][i][0]
     for mode in modes:
-        print results[mode][i][1], "(", results[mode][i][3], "s.)"
+        print results[mode][i][1], "(", results[mode][i][3], "s., solving", results[mode][i][4], ",s.)"
 
 
 
