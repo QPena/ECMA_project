@@ -63,58 +63,19 @@ def readDataFromFile(filename):
             Dist[int(x[0])-1][int(x[1])-1] = int(x[2])
             Delta[int(x[0])-1][int(x[1])-1] = float(x[3])
     # Pre-processing : retrait des noeuds doublons
-#    dbl = np.unique([[i+1 for i in range(n) if Dist[i] == Dist[j] and Delta[i] == Delta[j] and p[i] == p[j]] for j in range(n)])
-#    unique = []
-#    for db in dbl:
-#        if s in db:
-#            unique.append(s)
-#        elif t in db:
-#            unique.append(t)
-#        else:
-#            ph_dbl = [ph[node-1] for node in db]
-#            if len(ph_dbl) > 0:
-#                ind = np.argmin(ph_dbl)
-#                unique.append(db[ind])
-#    Dist = [[Dist[j-1][i-1] for i in unique] for j in unique]
-#    Delta = [[Delta[j-1][i-1] for i in unique] for j in unique]
-#    Mat = [m for m in Mat if m[0] in unique and m[1] in unique]
-#    p = [p[i-1] for i in unique]
-#    ph = [ph[i-1] for i in unique]
-#    n = len(unique)
-    
-#    dbl = np.unique([[i+1 for i in range(n) if Dist[i] == Dist[j] and Delta[i] == Delta[j]] for j in range(n)])
-#    unique = []
-#    for db in dbl:
-#        if s in db:
-#            unique.append(s)
-#        elif t in db:
-#            unique.append(t)
-#        elif len(db)>0:
-#            p_dbl = [p[node-1] for node in db]
-#            ph_dbl = [ph[node-1] for node in db]
-#            min_p = np.min(p_dbl)
-#            min_ph = np.min(ph_dbl)
-#            minimum_found = False
-#            for node in db:
-#                if p[node-1] == min_p and ph[node-1] == min_ph:
-#                    unique.append(node)
-#                    minimum_found = True
-#                    break
-#            if not minimum_found:
-#                print "NOT FOUND"
-#                dbl_p = [[i for i in db if p[i-1] == p[j-1]] for j in db]
-#                for db_p in dbl_p:
-#                    ph_dbl_p = [ph[node-1] for node in db_p]
-#                    ind = np.argmin(ph_dbl_p)
-#                    unique.append(db_p[ind])
-#    Dist = [[Dist[j-1][i-1] for i in unique] for j in unique]
-#    Delta = [[Delta[j-1][i-1] for i in unique] for j in unique]
-#    Mat = [m for m in Mat if m[0] in unique and m[1] in unique]
-#    p = [p[i-1] for i in unique]
-#    ph = [ph[i-1] for i in unique]
-#    n = len(unique)
-    
-    dbl = np.unique([[i+1 for i in range(n) if Dist[i] == Dist[j] and Delta[i] == Delta[j] and p[i] == p[j]] for j in range(n)])
+    #nei = [[i+1 for i in range(n) if Dist[i] == Dist[j] and Delta[i] == Delta[j] and p[i] == p[j]] for j in range(n)]
+    #dbl = np.unique(nei)
+    dbl = []
+    already = []
+    for i in range(n):
+        if i not in already:
+            db = [i+1]
+            for j in range(i+1,n):
+                if Dist[i] == Dist[j] and Delta[i] == Delta[j] and p[i] == p[j]:
+                    db.append(j+1)
+                    already.append(j)
+            dbl.append(db)
+            
     if len(dbl) < n:
         unique = []
     
@@ -142,15 +103,13 @@ def readDataFromFile(filename):
                         unique.append(db[ind])
                     else:
                         unique += db
-    
     Dist = [[Dist[j-1][i-1] for i in unique] for j in unique]
     Delta = [[Delta[j-1][i-1] for i in unique] for j in unique]
     Mat = [m for m in Mat if m[0] in unique and m[1] in unique]
     p = [p[i-1] for i in unique]
     ph = [ph[i-1] for i in unique]
     n = len(unique)
-
-
+    
 class CuttingPlaneCallback(LazyConstraintCallback):
     def __call__(self):
         # Enregistrement des résultats du problème maître
@@ -683,12 +642,12 @@ def heuristicSolve():
     return obj_val, values
 
 
-#modes = ["CP", "dual", "b&b"]
-modes = ["heuristic", "dual"]
+#modes = ["CP", "dual", "b&c"]
+modes = ["b&c"]
 results = {mode : [] for mode in modes}
 
 
-for f in files.files[:10]:
+for f in files.files[:]:
     for mode in modes:
         start_time = time.clock()
         print f
