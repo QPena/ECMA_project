@@ -505,12 +505,14 @@ def heuristicSolve_____():
             break
         for b in Pb:
                 if Dist[getNodeIndex(a)][getNodeIndex(b)] > 0:
-                    distance = d[getNodeIndex(a)] + Dist[getNodeIndex(a)][getNodeIndex(b)] * (1+Delta[getNodeIndex(a)][getNodeIndex(b)])
+                    #distance = d[getNodeIndex(a)] + Dist[getNodeIndex(a)][getNodeIndex(b)] * (1+Delta[getNodeIndex(a)][getNodeIndex(b)])
+                    distance = d[getNodeIndex(a)] + p[getNodeIndex(b)] # + 2*ph[getNodeIndex(b)]
                     #wei = weight[getNodeIndex(a)] + p[getNodeIndex(b)]
                     if d[getNodeIndex(b)] > distance:# and wei <= S - wei_add:
                         pred[getNodeIndex(b)] = a
                         d[getNodeIndex(b)] = distance
                         #weight[getNodeIndex(b)] = wei
+
 
     curr = t
     path = []
@@ -525,41 +527,44 @@ def heuristicSolve_____():
     inside = [x for x in path if x != s and x != t]
     
     con_val, delta_2_star = worstWeight_heu(values)
-    while con_val > S:
-        change = False
-        for remove in sorted(inside, key=lambda x: p[getNodeIndex(x)] + delta_2_star[getNodeIndex(x)] * ph[getNodeIndex(x)]):
-            before = path[path.index(remove)-1]
-            after = path[path.index(remove)+1]
-            for add in sorted([node for node in unique if node not in path and\
-                                                            ArkMap[getNodeIndex(before)][getNodeIndex(node)] >= 0 and\
-                                                            ArkMap[getNodeIndex(node)][getNodeIndex(after)] >= 0],
-                                key=lambda x: p[getNodeIndex(x)] + delta_2_star[getNodeIndex(x)] * ph[getNodeIndex(x)]):
-#                if p[getNodeIndex(add)] + delta_2_star[getNodeIndex(remove)] * ph[getNodeIndex(add)] > p[getNodeIndex(remove)] + delta_2_star[getNodeIndex(remove)] * ph[getNodeIndex(remove)]:
-#                    continue
-                print path, remove, add
-                values[ArkMap[getNodeIndex(before)][getNodeIndex(add)]] = 1
-                values[ArkMap[getNodeIndex(add)][getNodeIndex(after)]] = 1
-                values[ArkMap[getNodeIndex(before)][getNodeIndex(remove)]] = 0
-                values[ArkMap[getNodeIndex(remove)][getNodeIndex(after)]] = 0
-                
-                path[path.index(remove)] = add
-
-                inside[inside.index(remove)] = add
-                
-                change = True
-                break
-            if change:
-                break
-        if change:    
-            print change
-            con_val, delta_2_star = worstWeight_heu(values)
-            print con_val, S
-            continue
-        else:
-            print "BROKEN"
-            break
-    
-    obj_val, _ = worstObjective_heu(values)
+#    while con_val > S:
+#        change = False
+#        for remove in sorted(inside, key=lambda x: p[getNodeIndex(x)] + delta_2_star[getNodeIndex(x)] * ph[getNodeIndex(x)]):
+#            before = path[path.index(remove)-1]
+#            after = path[path.index(remove)+1]
+#            for add in sorted([node for node in unique if node not in path and\
+#                                                            ArkMap[getNodeIndex(before)][getNodeIndex(node)] >= 0 and\
+#                                                            ArkMap[getNodeIndex(node)][getNodeIndex(after)] >= 0],
+#                                key=lambda x: p[getNodeIndex(x)] + delta_2_star[getNodeIndex(x)] * ph[getNodeIndex(x)]):
+##                if p[getNodeIndex(add)] + delta_2_star[getNodeIndex(remove)] * ph[getNodeIndex(add)] > p[getNodeIndex(remove)] + delta_2_star[getNodeIndex(remove)] * ph[getNodeIndex(remove)]:
+##                    continue
+#                print path, remove, add
+#                values[ArkMap[getNodeIndex(before)][getNodeIndex(add)]] = 1
+#                values[ArkMap[getNodeIndex(add)][getNodeIndex(after)]] = 1
+#                values[ArkMap[getNodeIndex(before)][getNodeIndex(remove)]] = 0
+#                values[ArkMap[getNodeIndex(remove)][getNodeIndex(after)]] = 0
+#                
+#                path[path.index(remove)] = add
+#
+#                inside[inside.index(remove)] = add
+#                
+#                change = True
+#                break
+#            if change:
+#                break
+#        if change:    
+#            print change
+#            con_val, delta_2_star = worstWeight_heu(values)
+#            print con_val, S
+#            continue
+#        else:
+#            print "BROKEN"
+#            break
+    if con_val > S:
+        print "BROKEN"
+        obj_val = 0
+    else:
+        obj_val, _ = worstObjective_heu(values)
     
     
     return obj_val, values
@@ -644,6 +649,7 @@ def heuristicSolve():
 
 #modes = ["CP", "dual", "b&c"]
 modes = ["b&c"]
+
 results = {mode : [] for mode in modes}
 
 
@@ -664,7 +670,7 @@ for f in files.files[:]:
         if mode == "classic":
             objectif, solution = nonRobustSolve()
         if mode == "heuristic":
-            objectif, solution = heuristicSolve()
+            objectif, solution = heuristicSolve_____()
         
         solve_time = time.clock() - data_time
         exec_time = time.clock() - start_time
@@ -676,7 +682,10 @@ for f in files.files[:]:
         print "dont data :", data_time - start_time
         print "dont solving :", solve_time
         print "\n\n"
-
+        break
+        if objectif == 0:
+            print "STOP"
+            break
 for i in range(len(results[modes[0]])):
     print results[modes[0]][i][0]
     for mode in modes:
