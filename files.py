@@ -2,9 +2,10 @@
 """
 Created on Sun Jan  6 15:50:16 2019
 
-@author: Quentin
+@author: Quentin PENA, Guillaume FAVIER
 """
 
+# Liste des fichiers de données
 files = [
 "ECMA_Instances_2018-2019/20_USA-road-d.BAY.gr",
 "ECMA_Instances_2018-2019/40_USA-road-d.BAY.gr",
